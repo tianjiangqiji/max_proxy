@@ -1,0 +1,84 @@
+import express from 'express';
+import { getApiKeyByValue, isApiKeyValid, getSystemConfig } from '../database/operations';
+
+const router = express.Router();
+
+// Query API key information
+router.get('/query/:key', (req, res) => {
+  try {
+    const { key } = req.params;
+    
+    if (!key) {
+      return res.status(400).json({ error: 'API key 不能为空' });
+    }
+
+    const keyRecord = getApiKeyByValue(key);
+    
+    if (!keyRecord) {
+      return res.status(404).json({ error: '未找到该 API key' });
+    }
+
+    const isValid = isApiKeyValid(keyRecord);
+    
+    res.json({
+      key_value: keyRecord.key_value,
+      group_name: keyRecord.group_name,
+      expires_at: keyRecord.expires_at,
+      is_active: keyRecord.is_active,
+      is_valid: isValid,
+      created_at: keyRecord.created_at,
+      updated_at: keyRecord.updated_at
+    });
+  } catch (error) {
+    console.error('Query key error:', error);
+    res.status(500).json({ error: '查询 API key 信息失败' });
+  }
+});
+
+// Get system information (model IDs, server URL)
+router.get('/info', (req, res) => {
+  try {
+    const modelIds = getSystemConfig('model_ids') || 'gpt-3.5-turbo,gpt-4,gpt-4-turbo';
+    const serverUrl = `${req.protocol}://${req.get('host')}/api/v1`;
+    
+    res.json({
+      server_url: serverUrl,
+      model_ids: modelIds.split(',').map(id => id.trim()),
+      qq_group: '720198992'
+    });
+  } catch (error) {
+    console.error('Get info error:', error);
+    res.status(500).json({ error: '获取系统信息失败' });
+  }
+});
+
+// Health check for API keys
+router.post('/validate', (req, res) => {
+  try {
+    const { key } = req.body;
+    
+    if (!key) {
+      return res.status(400).json({ error: 'API key 不能为空' });
+    }
+
+    const keyRecord = getApiKeyByValue(key);
+    
+    if (!keyRecord) {
+      return res.json({ valid: false, message: '未找到该 API key' });
+    }
+
+    const isValid = isApiKeyValid(keyRecord);
+    
+    res.json({
+      valid: isValid,
+      message: isValid ? '该 API key 有效' : '该 API key 已过期或已停用',
+      group_name: keyRecord.group_name,
+      expires_at: keyRecord.expires_at
+    });
+  } catch (error) {
+    console.error('Validate key error:', error);
+    res.status(500).json({ error: '验证 API key 失败' });
+  }
+});
+
+export default router;
