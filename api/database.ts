@@ -2,13 +2,9 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import bcrypt from 'bcrypt';
-import { fileURLToPath } from 'url';
 
-// 在 ES 模块中获取当前目录
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const dbPath = path.join(__dirname, '../data/proxy.db');
+const dataRoot = path.resolve(process.cwd(), 'data');
+const dbPath = path.join(dataRoot, 'proxy.db');
 
 let db: Database.Database;
 
@@ -51,9 +47,8 @@ export interface AdminUser {
 export function initializeDatabase(): void {
   try {
     // Ensure data directory exists
-    const dataDir = path.join(__dirname, '../data');
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
+    if (!fs.existsSync(dataRoot)) {
+      fs.mkdirSync(dataRoot, { recursive: true });
     }
 
     db = new Database(dbPath);

@@ -93,7 +93,8 @@ const proxyMiddleware = createProxyMiddleware({
   target: 'http://localhost', // Will be overridden by load balancer
   changeOrigin: true,
   pathRewrite: {
-    '^/api/v1': '/v1', // Remove /api prefix
+    '^/api/v1/models': '/models', // Special handling for models endpoint
+    '^/api/v1': '/v1', // Remove /api prefix for other endpoints
   },
   router: (req: express.Request) => {
     return req.targetEndpoint?.url || 'http://localhost';

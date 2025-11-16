@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 
@@ -67,12 +67,26 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
   const [endpointGroupName, setEndpointGroupName] = useState('');
   const [endpointWeight, setEndpointWeight] = useState(1);
   const [isCreatingEndpoint, setIsCreatingEndpoint] = useState(false);
+  const [isEndpointEditDialogOpen, setIsEndpointEditDialogOpen] = useState(false);
+  const [editingEndpointId, setEditingEndpointId] = useState<number | null>(null);
+  const [editingEndpointUrl, setEditingEndpointUrl] = useState('');
+  const [editingEndpointApiKey, setEditingEndpointApiKey] = useState('');
+  const [editingEndpointGroupName, setEditingEndpointGroupName] = useState('');
+  const [editingEndpointWeight, setEditingEndpointWeight] = useState(1);
+  const [editingEndpointActive, setEditingEndpointActive] = useState(true);
+  const [isSavingEndpoint, setIsSavingEndpoint] = useState(false);
+  const [isEndpointDeleteDialogOpen, setIsEndpointDeleteDialogOpen] = useState(false);
+  const [endpointToDelete, setEndpointToDelete] = useState<ApiEndpoint | null>(null);
+  const [isDeletingEndpoint, setIsDeletingEndpoint] = useState(false);
   
   // API Key dialog states
   const [isKeyDialogOpen, setIsKeyDialogOpen] = useState(false);
   const [keyGroupName, setKeyGroupName] = useState('');
   const [keyExpiresAt, setKeyExpiresAt] = useState(-1);
   const [isCreatingKey, setIsCreatingKey] = useState(false);
+  const [isKeyDeleteDialogOpen, setIsKeyDeleteDialogOpen] = useState(false);
+  const [keyToDelete, setKeyToDelete] = useState<ApiKey | null>(null);
+  const [isDeletingKey, setIsDeletingKey] = useState(false);
   
   const { toast } = useToast();
 
@@ -165,7 +179,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
       if (!response.ok) throw new Error('创建端点失败');
 
       const newEndpoint = await response.json();
-      setEndpoints([newEndpoint, ...endpoints]);
+      setEndpoints((prev) => [newEndpoint, ...prev]);
       toast({ title: '成功', description: '端点创建成功' });
     } catch (error) {
       console.error(error);
@@ -174,6 +188,57 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
         description: '创建端点失败',
         variant: 'destructive',
       });
+    }
+  };
+
+  const updateEndpoint = async (id: number, endpointData: Omit<ApiEndpoint, 'id' | 'created_at' | 'updated_at'>) => {
+    try {
+      const response = await fetch(`/api/admin/endpoints/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(endpointData)
+      });
+
+      if (!response.ok) throw new Error('更新端点失败');
+
+      const updatedEndpoint = await response.json();
+      setEndpoints((prev) => prev.map((endpoint) => (endpoint.id === id ? updatedEndpoint : endpoint)));
+      toast({ title: '成功', description: '端点更新成功' });
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: '错误',
+        description: '更新端点失败',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  };
+
+  const deleteEndpoint = async (id: number) => {
+    try {
+      const response = await fetch(`/api/admin/endpoints/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) throw new Error('删除端点失败');
+
+      setEndpoints((prev) => prev.filter((endpoint) => endpoint.id !== id));
+      toast({ title: '成功', description: '端点已删除' });
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: '错误',
+        description: '删除端点失败',
+        variant: 'destructive',
+      });
+      throw error;
     }
   };
 
@@ -192,7 +257,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
       if (!response.ok) throw new Error('创建密钥失败');
 
       const newKey = await response.json();
-      setKeys([newKey, ...keys]);
+      setKeys((prev) => [newKey, ...prev]);
       toast({ title: '成功', description: 'API 密钥创建成功' });
     } catch (error) {
       console.error(error);
@@ -201,6 +266,30 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
         description: '创建密钥失败',
         variant: 'destructive',
       });
+    }
+  };
+
+  const deleteApiKey = async (id: number) => {
+    try {
+      const response = await fetch(`/api/admin/keys/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) throw new Error('删除密钥失败');
+
+      setKeys((prev) => prev.filter((key) => key.id !== id));
+      toast({ title: '成功', description: 'API 密钥已删除' });
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: '错误',
+        description: '删除密钥失败',
+        variant: 'destructive',
+      });
+      throw error;
     }
   };
 
@@ -229,6 +318,83 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
         description: '更新配置失败',
         variant: 'destructive',
       });
+    }
+  };
+
+  const resetEndpointEditState = () => {
+    setEditingEndpointId(null);
+    setEditingEndpointUrl('');
+    setEditingEndpointApiKey('');
+    setEditingEndpointGroupName('');
+    setEditingEndpointWeight(1);
+    setEditingEndpointActive(true);
+  };
+
+  const openEndpointEditDialog = (endpoint: ApiEndpoint) => {
+    setEditingEndpointId(endpoint.id);
+    setEditingEndpointUrl(endpoint.url);
+    setEditingEndpointApiKey(endpoint.api_key);
+    setEditingEndpointGroupName(endpoint.group_name);
+    setEditingEndpointWeight(endpoint.weight);
+    setEditingEndpointActive(endpoint.is_active);
+    setIsEndpointEditDialogOpen(true);
+  };
+
+  const handleUpdateEndpoint = async () => {
+    if (!editingEndpointId) return;
+
+    if (!editingEndpointUrl || !editingEndpointApiKey || !editingEndpointGroupName) {
+      toast({
+        title: '错误',
+        description: '请填写所有必填字段',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsSavingEndpoint(true);
+    try {
+      await updateEndpoint(editingEndpointId, {
+        url: editingEndpointUrl,
+        api_key: editingEndpointApiKey,
+        group_name: editingEndpointGroupName,
+        weight: editingEndpointWeight,
+        is_active: editingEndpointActive
+      });
+      setIsEndpointEditDialogOpen(false);
+      resetEndpointEditState();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsSavingEndpoint(false);
+    }
+  };
+
+  const handleDeleteEndpoint = async () => {
+    if (!endpointToDelete) return;
+    setIsDeletingEndpoint(true);
+    try {
+      await deleteEndpoint(endpointToDelete.id);
+      setEndpointToDelete(null);
+      setIsEndpointDeleteDialogOpen(false);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsDeletingEndpoint(false);
+    }
+  };
+
+  const handleDeleteKey = async () => {
+    if (!keyToDelete) return;
+    setIsDeletingKey(true);
+    try {
+      await deleteApiKey(keyToDelete.id);
+      setKeyToDelete(null);
+      setIsKeyDeleteDialogOpen(false);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsDeletingKey(false);
     }
   };
 
@@ -449,14 +615,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => {
-                            const newUrl = prompt('输入新的 URL：', endpoint.url);
-                            const newApiKey = prompt('输入新的 API Key：', endpoint.api_key);
-                            const newGroup = prompt('输入新的 分组：', endpoint.group_name);
-                            if (newUrl && newApiKey && newGroup) {
-                              // Update logic here
-                            }
-                          }}
+                          onClick={() => openEndpointEditDialog(endpoint)}
                         >
                           编辑
                         </Button>
@@ -464,9 +623,8 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
                           size="sm"
                           variant="destructive"
                           onClick={() => {
-                            if (confirm('确定要删除该端点吗？')) {
-                              // Delete logic here
-                            }
+                            setEndpointToDelete(endpoint);
+                            setIsEndpointDeleteDialogOpen(true);
                           }}
                         >
                           删除
@@ -518,9 +676,8 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
                           size="sm"
                           variant="destructive"
                           onClick={() => {
-                            if (confirm('确定要删除该密钥吗？')) {
-                              // Delete logic here
-                            }
+                            setKeyToDelete(key);
+                            setIsKeyDeleteDialogOpen(true);
                           }}
                         >
                           删除
@@ -678,6 +835,166 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
                 disabled={isCreatingEndpoint}
               >
                 {isCreatingEndpoint ? '创建中...' : '确认创建'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Endpoint Dialog */}
+        <Dialog
+          open={isEndpointEditDialogOpen}
+          onOpenChange={(open) => {
+            setIsEndpointEditDialogOpen(open);
+            if (!open) {
+              resetEndpointEditState();
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>编辑 API 端点</DialogTitle>
+              <DialogDescription>更新端点字段信息</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-endpoint-url">端点 URL</Label>
+                <Input
+                  id="edit-endpoint-url"
+                  value={editingEndpointUrl}
+                  onChange={(e) => setEditingEndpointUrl(e.target.value)}
+                  placeholder="https://api.example.com"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-endpoint-api-key">API Key</Label>
+                <Input
+                  id="edit-endpoint-api-key"
+                  value={editingEndpointApiKey}
+                  onChange={(e) => setEditingEndpointApiKey(e.target.value)}
+                  placeholder="输入 API Key"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-endpoint-group">分组名称</Label>
+                <Input
+                  id="edit-endpoint-group"
+                  value={editingEndpointGroupName}
+                  onChange={(e) => setEditingEndpointGroupName(e.target.value)}
+                  placeholder="输入分组名称"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-endpoint-weight">权重</Label>
+                <Input
+                  id="edit-endpoint-weight"
+                  type="number"
+                  value={editingEndpointWeight}
+                  onChange={(e) => setEditingEndpointWeight(Number(e.target.value))}
+                  placeholder="1"
+                  min="1"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-endpoint-active">状态</Label>
+                <select
+                  id="edit-endpoint-active"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  value={editingEndpointActive ? 'active' : 'inactive'}
+                  onChange={(e) => setEditingEndpointActive(e.target.value === 'active')}
+                >
+                  <option value="active">启用</option>
+                  <option value="inactive">停用</option>
+                </select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsEndpointEditDialogOpen(false);
+                  resetEndpointEditState();
+                }}
+              >
+                取消
+              </Button>
+              <Button onClick={handleUpdateEndpoint} disabled={isSavingEndpoint}>
+                {isSavingEndpoint ? '保存中...' : '确认保存'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Endpoint Dialog */}
+        <Dialog
+          open={isEndpointDeleteDialogOpen}
+          onOpenChange={(open) => {
+            setIsEndpointDeleteDialogOpen(open);
+            if (!open) {
+              setEndpointToDelete(null);
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>删除 API 端点</DialogTitle>
+              <DialogDescription>
+                此操作不可撤销，将永久删除端点 {endpointToDelete?.url}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsEndpointDeleteDialogOpen(false);
+                  setEndpointToDelete(null);
+                }}
+              >
+                取消
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteEndpoint}
+                disabled={isDeletingEndpoint}
+              >
+                {isDeletingEndpoint ? '删除中...' : '确认删除'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete API Key Dialog */}
+        <Dialog
+          open={isKeyDeleteDialogOpen}
+          onOpenChange={(open) => {
+            setIsKeyDeleteDialogOpen(open);
+            if (!open) {
+              setKeyToDelete(null);
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>删除 API 密钥</DialogTitle>
+              <DialogDescription>
+                此操作不可撤销，将永久删除密钥 {keyToDelete?.key_value}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsKeyDeleteDialogOpen(false);
+                  setKeyToDelete(null);
+                }}
+              >
+                取消
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteKey}
+                disabled={isDeletingKey}
+              >
+                {isDeletingKey ? '删除中...' : '确认删除'}
               </Button>
             </DialogFooter>
           </DialogContent>
