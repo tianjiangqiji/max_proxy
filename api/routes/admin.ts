@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import { authenticateToken } from './auth.js';
 import {
   getAllApiEndpoints,
+  getApiEndpointById,
   getActiveApiEndpoints,
   createApiEndpoint,
   updateApiEndpoint,
@@ -195,6 +196,55 @@ router.put('/config/:key', (req, res) => {
   } catch (error) {
     console.error('Update config error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Fetch models from specific endpoint for convenience
+router.post('/endpoints/:id/fetch-models', async (req, res) => {
+  try {
+    const id = Number.parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ error: 'Invalid endpoint ID' });
+    }
+
+    const endpoint = getApiEndpointById(id);
+    if (!endpoint) {
+      return res.status(404).json({ error: 'Endpoint not found' });
+    }
+
+    const baseUrl = endpoint.url.replace(/\/$/, '');
+    const modelsUrl = baseUrl.endsWith('/v1')
+      ? `${baseUrl}/models`
+      : `${baseUrl}/v1/models`;
+
+    const response = await fetch(modelsUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${endpoint.api_key}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      return res.status(response.status).json({
+        error: 'Failed to fetch models from endpoint',
+        details: errorBody
+      });
+    }
+
+    const data = await response.json() as { data?: Array<{ id?: string }> };
+    const modelIds = Array.isArray(data.data)
+      ? data.data
+          .map((model) => model.id)
+          .filter((idValue): idValue is string => Boolean(idValue))
+      : [];
+
+    return res.json({ models: modelIds });
+  } catch (error) {
+    console.error('Fetch models error:', error);
+    res.status(500).json({ error: 'Failed to fetch models from endpoint' });
   }
 });
 

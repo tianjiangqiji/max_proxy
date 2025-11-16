@@ -87,6 +87,10 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
   const [isKeyDeleteDialogOpen, setIsKeyDeleteDialogOpen] = useState(false);
   const [keyToDelete, setKeyToDelete] = useState<ApiKey | null>(null);
   const [isDeletingKey, setIsDeletingKey] = useState(false);
+
+  // Model config helper states
+  const [modelFetchEndpointId, setModelFetchEndpointId] = useState('');
+  const [isFetchingModelIds, setIsFetchingModelIds] = useState(false);
   
   const { toast } = useToast();
 
@@ -163,6 +167,12 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
   useEffect(() => {
     fetchData();
   }, [token]);
+
+  useEffect(() => {
+    if (!modelFetchEndpointId && endpoints.length > 0) {
+      setModelFetchEndpointId(String(endpoints[0].id));
+    }
+  }, [endpoints, modelFetchEndpointId]);
 
   // Create endpoint
   const createEndpoint = async (endpointData: Omit<ApiEndpoint, 'id' | 'created_at' | 'updated_at'>) => {
@@ -318,6 +328,59 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
         description: '更新配置失败',
         variant: 'destructive',
       });
+    }
+  };
+
+  const handleFetchModelIds = async () => {
+    if (!modelFetchEndpointId) {
+      toast({
+        title: '提示',
+        description: '请先选择要检测的端点',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsFetchingModelIds(true);
+    try {
+      const response = await fetch(`/api/admin/endpoints/${modelFetchEndpointId}/fetch-models`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || '获取模型列表失败');
+      }
+
+      const data = await response.json() as { models?: string[] };
+      const models = data.models ?? [];
+
+      if (models.length === 0) {
+        toast({
+          title: '提示',
+          description: '该端点未返回任何模型 ID',
+        });
+      } else {
+        const mergedModels = models.join(',');
+        setConfigs(prev => prev.map(config =>
+          config.key === 'model_ids' ? { ...config, value: mergedModels } : config
+        ));
+        toast({
+          title: '已填入',
+          description: '模型 ID 已写入输入框，请记得点击“更新”按钮保存。',
+        });
+      }
+    } catch (error) {
+      toast({
+        title: '错误',
+        description: error instanceof Error ? error.message : '获取模型列表失败',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsFetchingModelIds(false);
     }
   };
 
@@ -698,7 +761,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
                   <CardContent className="pt-6">
                     <div className="space-y-2">
                       <Label htmlFor={config.key}>{CONFIG_I18N[config.key]?.label ?? config.key}</Label>
-                      <div className="flex space-x-2">
+                      <div className="flex flex-col gap-2 md:flex-row md:items-center">
                         <Input
                           id={config.key}
                           value={config.value}
@@ -708,13 +771,45 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
                             ));
                           }}
                           placeholder={CONFIG_I18N[config.key]?.placeholder ?? config.description ?? ''}
+                          className="md:flex-1"
                         />
-                        <Button
-                          onClick={() => updateConfig(config.key, config.value)}
-                        >
-                          更新
-                        </Button>
+                        <div className="flex flex-wrap gap-2">
+                          {config.key === 'model_ids' && (
+                            <>
+                              <select
+                                className="min-w-[200px] rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"
+                                value={modelFetchEndpointId}
+                                onChange={(e) => setModelFetchEndpointId(e.target.value)}
+                              >
+                                <option value="">选择 API 端点</option>
+                                {endpoints.map((endpoint) => (
+                                  <option key={endpoint.id} value={endpoint.id}>
+                                    {endpoint.url}
+                                  </option>
+                                ))}
+                              </select>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                disabled={!modelFetchEndpointId || isFetchingModelIds}
+                                onClick={handleFetchModelIds}
+                              >
+                                {isFetchingModelIds ? '获取中...' : '读取模型'}
+                              </Button>
+                            </>
+                          )}
+                          <Button
+                            onClick={() => updateConfig(config.key, config.value)}
+                          >
+                            更新
+                          </Button>
+                        </div>
                       </div>
+                      {config.key === 'model_ids' && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          使用“读取模型”后仍需点击“更新”按钮保存到配置。
+                        </p>
+                      )}
                       <p className="text-sm text-gray-600 dark:text-gray-400">
                         {CONFIG_I18N[config.key]?.description ?? config.description ?? ''}
                       </p>

@@ -109,6 +109,19 @@ const proxyMiddleware = createProxyMiddleware({
       // Add custom headers
       proxyReq.setHeader('X-Forwarded-For', req.ip);
       proxyReq.setHeader('X-Original-API-Key', req.apiKey || '');
+
+      // Forward parsed JSON bodies because express.json() consumes the stream
+      if (
+        req.method !== 'GET' &&
+        req.method !== 'HEAD' &&
+        req.body &&
+        Object.keys(req.body).length > 0
+      ) {
+        const bodyData = JSON.stringify(req.body);
+        proxyReq.setHeader('Content-Type', req.headers['content-type'] || 'application/json');
+        proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
+        proxyReq.write(bodyData);
+      }
     },
     proxyRes: (proxyRes, req: express.Request, res: express.Response) => {
       // Handle streaming response headers

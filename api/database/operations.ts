@@ -16,6 +16,18 @@ export function getAllApiEndpoints(): ApiEndpoint[] {
   }));
 }
 
+export function getApiEndpointById(id: number): ApiEndpoint | null {
+  const db = getDatabase();
+  const stmt = db.prepare('SELECT * FROM api_endpoints WHERE id = ?');
+  const endpoint = stmt.get(id) as ApiEndpoint | undefined;
+  if (!endpoint) return null;
+
+  return {
+    ...endpoint,
+    is_active: Boolean(endpoint.is_active)
+  };
+}
+
 export function getActiveApiEndpoints(): ApiEndpoint[] {
   const db = getDatabase();
   const stmt = db.prepare('SELECT * FROM api_endpoints WHERE is_active = 1 ORDER BY id DESC');
