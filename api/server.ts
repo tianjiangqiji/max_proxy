@@ -9,8 +9,7 @@ import { getApiKeyByValue, isApiKeyValid } from './database/operations.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import apiRoutes from './routes/api.js';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { join } from 'path';
 import { existsSync } from 'fs';
 
 const app = express();
@@ -93,9 +92,10 @@ const proxyMiddleware = createProxyMiddleware({
   target: 'http://localhost', // Will be overridden by load balancer
   changeOrigin: true,
   pathRewrite: {
-    '^/api/v1/models': '/models', // Special handling for models endpoint
-    '^/api/v1': '/v1', // Remove /api prefix for other endpoints
+    '^/api/v1': '/v1', // Remove /api prefix
   },
+  // Handle streaming responses
+  selfHandleResponse: false, // Let the proxy handle streaming responses
   router: (req: express.Request) => {
     return req.targetEndpoint?.url || 'http://localhost';
   },
@@ -110,7 +110,20 @@ const proxyMiddleware = createProxyMiddleware({
       proxyReq.setHeader('X-Forwarded-For', req.ip);
       proxyReq.setHeader('X-Original-API-Key', req.apiKey || '');
     },
-    proxyRes: (proxyRes, req: express.Request) => {
+    proxyRes: (proxyRes, req: express.Request, res: express.Response) => {
+      // Handle streaming response headers
+      if (req.path.includes('/chat/completions') && proxyRes.headers['content-type']?.includes('text/event-stream')) {
+        // Ensure streaming headers are properly set
+        res.setHeader('Content-Type', proxyRes.headers['content-type']);
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        
+        // Pass through any other important headers
+        if (proxyRes.headers['access-control-allow-origin']) {
+          res.setHeader('Access-Control-Allow-Origin', proxyRes.headers['access-control-allow-origin']);
+        }
+      }
+      
       // Log the request
       const loadBalancer = getLoadBalancer();
       const responseTime = Date.now() - (req.startTime || Date.now());
@@ -142,7 +155,7 @@ const proxyMiddleware = createProxyMiddleware({
           // 尝试重新代理请求
           return proxyMiddleware(req, res);
         }
-      } catch (error) {
+      } catch {
         // 忽略获取下一个端点的错误
       }
       
@@ -164,7 +177,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/keys', apiRoutes);
 
 // Main proxy route - this handles the actual API proxying
-app.use('/api/v1/*', validateApiKey, loadBalancerMiddleware, (req, res, next) => {
+app.use('/api/v1', validateApiKey, loadBalancerMiddleware, (req, res, next) => {
   req.startTime = Date.now(); // Add start time for logging
   next();
 }, proxyMiddleware);
