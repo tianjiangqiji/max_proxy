@@ -10,16 +10,24 @@ import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import apiRoutes from './routes/api.js';
 import { fileURLToPath } from 'url';
-import { join, resolve } from 'path';
+import { dirname, join, resolve } from 'path';
 import { existsSync } from 'fs';
 import { config as loadEnv } from 'dotenv';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = join(__filename, '..');
+const currentFilename = typeof __filename === 'string' && __filename
+  ? __filename
+  : typeof module !== 'undefined' && typeof module.filename === 'string'
+    ? module.filename
+    : '';
+const currentDirname = typeof __dirname === 'string' && __dirname
+  ? __dirname
+  : currentFilename
+    ? dirname(currentFilename)
+    : process.cwd();
 
 const envCandidates = [
-  resolve(__dirname, '..', 'backend.env'),
-  resolve(__dirname, '.env'),
+  resolve(currentDirname, '..', 'backend.env'),
+  resolve(currentDirname, '.env'),
   resolve(process.cwd(), 'backend.env'),
   resolve(process.cwd(), '.env')
 ];

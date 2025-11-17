@@ -41,3 +41,5 @@ npm run start:api   # 启动后端（3001）
 ```
 
 - `dist-server/` 内部包含自动生成的 `package.json`，可以在该目录执行 `npm install --production` 安装必要依赖，再运行 `npm start` 启动后端。
+默认账号：admin
+默认密码：123456
