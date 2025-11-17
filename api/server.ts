@@ -9,9 +9,13 @@ import { getApiKeyByValue, isApiKeyValid } from './database/operations.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import apiRoutes from './routes/api.js';
+import { fileURLToPath } from 'url';
 import { join, resolve } from 'path';
 import { existsSync } from 'fs';
 import { config as loadEnv } from 'dotenv';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = join(__filename, '..');
 
 const envCandidates = [
   resolve(__dirname, '..', 'backend.env'),

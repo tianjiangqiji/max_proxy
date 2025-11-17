@@ -61,22 +61,60 @@ router.get('/endpoints', (req, res) => {
 
 router.post('/endpoints', (req, res) => {
   try {
-    const { url, api_key, group_name, weight = 1, is_active = true } = req.body;
-    
-    if (!url || !api_key || !group_name) {
-      return res.status(400).json({ error: 'URL, API key, and group name are required' });
-    }
-
-    const endpoint = createApiEndpoint({
+    const {
       url,
       api_key,
+      api_keys,
       group_name,
-      weight,
-      is_active
-    });
+      weight = 1,
+      is_active = true
+    } = req.body;
+
+    const normalizedUrl = typeof url === 'string' ? url.trim() : '';
+    const normalizedGroup = typeof group_name === 'string' ? group_name.trim() : '';
+
+    const collectedKeys: unknown[] = [];
+    if (Array.isArray(api_keys)) {
+      collectedKeys.push(...api_keys);
+    } else if (typeof api_keys === 'string') {
+      collectedKeys.push(api_keys);
+    }
+    if (api_key !== undefined) {
+      collectedKeys.push(api_key);
+    }
+
+    const uniqueKeys = Array.from(
+      new Set(
+        collectedKeys
+          .flatMap((rawKey) => {
+            if (typeof rawKey !== 'string') return [];
+            return rawKey
+              .split(',')
+              .map((value) => value.trim())
+              .filter((value) => value.length > 0);
+          })
+      )
+    );
+
+    if (!normalizedUrl || !normalizedGroup || uniqueKeys.length === 0) {
+      return res.status(400).json({ error: 'URL, API key(s), and group name are required' });
+    }
+
+    const normalizedWeight = Number.isFinite(Number(weight)) ? Number(weight) : 1;
+    const normalizedActive = typeof is_active === 'boolean' ? is_active : Boolean(is_active);
+
+    const createdEndpoints = uniqueKeys.map((keyValue) =>
+      createApiEndpoint({
+        url: normalizedUrl,
+        api_key: keyValue,
+        group_name: normalizedGroup,
+        weight: normalizedWeight,
+        is_active: normalizedActive
+      })
+    );
 
     refreshLoadBalancer();
-    res.json(endpoint);
+    res.json({ endpoints: createdEndpoints });
   } catch (error) {
     console.error('Create endpoint error:', error);
     res.status(500).json({ error: 'Internal server error' });

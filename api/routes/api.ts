@@ -5,6 +5,21 @@ const router = express.Router();
 const DEFAULT_PURCHASE_URL = 'https://qm.qq.com/q/a76O4CjZAI';
 const DEFAULT_PURCHASE_LABEL = '立即获取！';
 
+function buildApiServerUrl(req: express.Request): string {
+  const envBackendUrl = (process.env.BACKEND_URL || process.env.VITE_BACKEND_URL || '').replace(/\/$/, '');
+  if (envBackendUrl) {
+    const normalized = envBackendUrl.replace(/\/$/, '');
+    if (normalized.endsWith('/api')) {
+      return `${normalized}/v1`;
+    }
+    if (normalized.endsWith('/api/v1')) {
+      return normalized;
+    }
+    return `${normalized}/api/v1`;
+  }
+  return `${req.protocol}://${req.get('host')}/api/v1`;
+}
+
 // Query API key information
 router.get('/query/:key', (req, res) => {
   try {
@@ -41,7 +56,7 @@ router.get('/query/:key', (req, res) => {
 router.get('/info', (req, res) => {
   try {
     const modelIds = getSystemConfig('model_ids') || 'gpt-3.5-turbo,gpt-4,gpt-4-turbo';
-    const serverUrl = `${req.protocol}://${req.get('host')}/api/v1`;
+    const serverUrl = buildApiServerUrl(req);
     const purchaseUrl = getSystemConfig('api_key_purchase_url') || DEFAULT_PURCHASE_URL;
     const purchaseLabel = getSystemConfig('purchase_button_label') || DEFAULT_PURCHASE_LABEL;
     

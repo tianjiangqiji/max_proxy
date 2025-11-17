@@ -152,6 +152,7 @@ class LoadBalancer {
       } catch (error) {
         // 如果选择端点失败，尝试使用当前端点
         if (!this.currentEndpoint) {
+          console.error('Unable to select API endpoint via load balancer', error);
           throw new Error('Unable to select API endpoint');
         }
       }

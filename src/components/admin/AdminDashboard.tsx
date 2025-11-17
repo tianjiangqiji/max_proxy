@@ -60,6 +60,15 @@ interface AdminDashboardProps {
   onLogout: () => void;
 }
 
+type CreateEndpointPayload = {
+  url: string;
+  group_name: string;
+  weight: number;
+  is_active: boolean;
+  api_key?: string;
+  api_keys?: string[];
+};
+
 const SUGGESTION_DISPLAY_LIMIT = 6;
 const LOG_REFRESH_INTERVAL = 5000;
 
@@ -97,6 +106,9 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [isClearingLogs, setIsClearingLogs] = useState(false);
   const [isDownloadingLogs, setIsDownloadingLogs] = useState(false);
+  const [endpointGroupFilter, setEndpointGroupFilter] = useState('');
+  const [endpointUrlFilter, setEndpointUrlFilter] = useState('');
+  const [showEndpointFilters, setShowEndpointFilters] = useState(false);
   
   // API Key dialog states
   const [isKeyDialogOpen, setIsKeyDialogOpen] = useState(false);
@@ -205,10 +217,22 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
     () => Array.from(new Set(endpoints.map(endpoint => endpoint.url))).filter(Boolean),
     [endpoints]
   );
+  const filteredEndpoints = useMemo(() => {
+    const groupFilter = endpointGroupFilter.trim();
+    const urlFilter = endpointUrlFilter.trim().toLowerCase();
+
+    return endpoints.filter((endpoint) => {
+      const matchGroup = groupFilter ? endpoint.group_name === groupFilter : true;
+      const matchUrl = urlFilter ? endpoint.url.toLowerCase().includes(urlFilter) : true;
+      return matchGroup && matchUrl;
+    });
+  }, [endpoints, endpointGroupFilter, endpointUrlFilter]);
+  const hasEndpointFilters = Boolean(endpointGroupFilter.trim() || endpointUrlFilter.trim());
   const endpointUrlListId = 'endpoint-url-options';
   const endpointGroupListId = 'endpoint-group-options';
   const urlSuggestions = uniqueUrls.slice(0, SUGGESTION_DISPLAY_LIMIT);
   const groupSuggestions = uniqueGroups.slice(0, SUGGESTION_DISPLAY_LIMIT);
+  const baseSelectClasses = 'h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-900 dark:border-gray-700';
 
   useEffect(() => {
     if (!modelFetchEndpointId && endpoints.length > 0) {
@@ -273,8 +297,14 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
     );
   };
 
+  const validatedEndpointKeys = (rawValue: string) =>
+    rawValue
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+
   // Create endpoint
-  const createEndpoint = async (endpointData: Omit<ApiEndpoint, 'id' | 'created_at' | 'updated_at'>) => {
+  const createEndpoint = async (endpointData: CreateEndpointPayload) => {
     try {
       const response = await apiFetch('/api/admin/endpoints', {
         method: 'POST',
@@ -287,9 +317,25 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
 
       if (!response.ok) throw new Error('创建端点失败');
 
-      const newEndpoint = await response.json();
-      setEndpoints((prev) => [newEndpoint, ...prev]);
-      toast({ title: '成功', description: '端点创建成功' });
+      const result = await response.json() as { endpoints?: ApiEndpoint[] } | ApiEndpoint[];
+      let createdList: ApiEndpoint[] = [];
+      if (Array.isArray(result)) {
+        createdList = result;
+      } else if (Array.isArray(result.endpoints)) {
+        createdList = result.endpoints;
+      }
+
+      if (createdList.length === 0) {
+        throw new Error('未能创建端点');
+      }
+
+      setEndpoints((prev) => [...createdList, ...prev]);
+      // 再拉取一次，确保界面数据与后端完全同步（避免需要手动刷新）
+      await fetchData();
+      toast({
+        title: '成功',
+        description: createdList.length > 1 ? `已创建 ${createdList.length} 个端点` : '端点创建成功'
+      });
     } catch (error) {
       console.error(error);
       toast({
@@ -626,7 +672,9 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
 
   // Handle create endpoint
   const handleCreateEndpoint = async () => {
-    if (!endpointUrl || !endpointApiKey || !endpointGroupName) {
+    const trimmedUrl = endpointUrl.trim();
+    const trimmedGroupName = endpointGroupName.trim();
+    if (!trimmedUrl || !trimmedGroupName) {
       toast({
         title: '错误',
         description: '请填写所有必填字段',
@@ -635,12 +683,22 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
       return;
     }
 
+    const apiKeys = validatedEndpointKeys(endpointApiKey);
+    if (apiKeys.length === 0) {
+      toast({
+        title: '错误',
+        description: '至少输入一个 API Key',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsCreatingEndpoint(true);
     try {
       await createEndpoint({
-        url: endpointUrl,
-        api_key: endpointApiKey,
-        group_name: endpointGroupName,
+        url: trimmedUrl,
+        api_keys: apiKeys,
+        group_name: trimmedGroupName,
         weight: endpointWeight,
         is_active: true
       });
@@ -658,6 +716,14 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
     }
   };
 
+  const calculateExpiresAt = (days: number): number | string => {
+    if (days === -1) return -1;
+    const clampedDays = Math.max(days, 0);
+    const expiresDate = new Date();
+    expiresDate.setDate(expiresDate.getDate() + clampedDays);
+    return expiresDate.toISOString();
+  };
+
   // Handle create API key
   const handleCreateKey = async () => {
     if (!keyGroupName) {
@@ -671,10 +737,11 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
 
     setIsCreatingKey(true);
     try {
+      const normalizedExpiresAt = calculateExpiresAt(keyExpiresAt);
       await createApiKey({
         key_value: '', // Will be generated server-side
         group_name: keyGroupName,
-        expires_at: keyExpiresAt,
+        expires_at: normalizedExpiresAt,
         is_active: true
       });
 
@@ -823,49 +890,121 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
           </TabsList>
 
           <TabsContent value="endpoints" className="space-y-4">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-xl font-semibold">API 端点</h2>
-              <Button onClick={() => setIsEndpointDialogOpen(true)}>
-                新增端点
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant={showEndpointFilters ? 'default' : 'outline'}
+                  onClick={() => setShowEndpointFilters((prev) => !prev)}
+                  className="relative"
+                >
+                  {showEndpointFilters ? '收起筛选' : '展开筛选'}
+                  {hasEndpointFilters && !showEndpointFilters && (
+                    <span className="absolute -right-1 -top-1 inline-flex h-2 w-2 rounded-full bg-red-500" />
+                  )}
+                </Button>
+                <Button onClick={() => setIsEndpointDialogOpen(true)}>
+                  新增端点
+                </Button>
+              </div>
             </div>
-            <div className="grid gap-4">
-              {endpoints.map((endpoint) => (
-                <Card key={endpoint.id}>
-                  <CardContent className="pt-6">
-                    <div className="flex justify-between items-start">
-                      <div className="space-y-1">
-                        <div className="font-medium">{endpoint.url}</div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400">
-                          分组：{endpoint.group_name} | 权重：{endpoint.weight}
-                        </div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400">
-                          状态：{endpoint.is_active ? '启用' : '停用'}
-                        </div>
-                      </div>
-                      <div className="flex space-x-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEndpointEditDialog(endpoint)}
-                        >
-                          编辑
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => {
-                            setEndpointToDelete(endpoint);
-                            setIsEndpointDeleteDialogOpen(true);
-                          }}
-                        >
-                          删除
-                        </Button>
-                      </div>
+            {showEndpointFilters && (
+              <Card>
+                <CardContent className="pt-6 space-y-3">
+                  <div className="text-sm font-medium">筛选端点</div>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="endpoint-filter-group" className="text-sm">按分组筛选</Label>
+                      <select
+                        id="endpoint-filter-group"
+                        className={baseSelectClasses}
+                        value={endpointGroupFilter}
+                        onChange={(e) => setEndpointGroupFilter(e.target.value)}
+                      >
+                        <option value="">全部分组</option>
+                        {uniqueGroups.map((group) => (
+                          <option key={`filter-group-${group}`} value={group}>{group}</option>
+                        ))}
+                      </select>
                     </div>
+                    <div className="space-y-1 md:col-span-2">
+                      <Label htmlFor="endpoint-filter-url" className="text-sm">按 URL 筛选（支持模糊）</Label>
+                      <Input
+                        id="endpoint-filter-url"
+                        value={endpointUrlFilter}
+                        onChange={(e) => setEndpointUrlFilter(e.target.value)}
+                        placeholder="输入 URL 关键词"
+                      />
+                    </div>
+                  </div>
+                  {hasEndpointFilters && (
+                    <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                      <span>
+                        当前筛选：{endpointGroupFilter ? `分组 = ${endpointGroupFilter}` : ''}{endpointGroupFilter && endpointUrlFilter ? '，' : ''}{endpointUrlFilter ? `URL 包含 \"${endpointUrlFilter}\"` : ''}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="ml-2"
+                        onClick={() => {
+                          setEndpointGroupFilter('');
+                          setEndpointUrlFilter('');
+                        }}
+                      >
+                        清除筛选
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+            <div className="grid gap-4">
+              {filteredEndpoints.length === 0 ? (
+                <Card>
+                  <CardContent className="pt-6 text-sm text-gray-500 dark:text-gray-400">
+                    {endpoints.length === 0
+                      ? '暂无 API 端点，请先新增。'
+                      : '没有匹配的端点，请调整筛选条件。'}
                   </CardContent>
                 </Card>
-              ))}
+              ) : (
+                filteredEndpoints.map((endpoint) => (
+                  <Card key={endpoint.id}>
+                    <CardContent className="pt-6">
+                      <div className="flex justify-between items-start">
+                        <div className="space-y-1">
+                          <div className="font-medium">{endpoint.url}</div>
+                          <div className="text-sm text-gray-600 dark:text-gray-400">
+                            分组：{endpoint.group_name} | 权重：{endpoint.weight}
+                          </div>
+                          <div className="text-sm text-gray-600 dark:text-gray-400">
+                            状态：{endpoint.is_active ? '启用' : '停用'}
+                          </div>
+                        </div>
+                        <div className="flex space-x-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openEndpointEditDialog(endpoint)}
+                          >
+                            编辑
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => {
+                              setEndpointToDelete(endpoint);
+                              setIsEndpointDeleteDialogOpen(true);
+                            }}
+                          >
+                            删除
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </div>
           </TabsContent>
 
@@ -946,7 +1085,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
                           {config.key === 'model_ids' && (
                             <>
                               <select
-                                className="min-w-[200px] rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"
+                                className={`${baseSelectClasses} min-w-[200px]`}
                                 value={modelFetchEndpointId}
                                 onChange={(e) => setModelFetchEndpointId(e.target.value)}
                               >
@@ -1051,7 +1190,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
                 <Label htmlFor="key-group">分组名称</Label>
                 <select
                   id="key-group"
-                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"
+                  className={baseSelectClasses}
                   value={keyGroupName}
                   onChange={(e) => setKeyGroupName(e.target.value)}
                   disabled={uniqueGroups.length === 0}
@@ -1113,13 +1252,16 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
                 {renderSuggestionButtons(urlSuggestions, setEndpointUrl, 'create-url')}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="endpoint-api-key">API Key</Label>
+                <Label htmlFor="endpoint-api-key">API Key（可用逗号分隔批量导入）</Label>
                 <Input
                   id="endpoint-api-key"
                   value={endpointApiKey}
                   onChange={(e) => setEndpointApiKey(e.target.value)}
-                  placeholder="输入 API Key"
+                  placeholder="支持输入多个，用英文逗号分隔"
                 />
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  多个 Key 将按相同 URL 与分组分别创建，可用英文逗号 <code>,</code> 分隔。
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="endpoint-group">分组名称</Label>
@@ -1223,7 +1365,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
                 <Label htmlFor="edit-endpoint-active">状态</Label>
                 <select
                   id="edit-endpoint-active"
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className={baseSelectClasses}
                   value={editingEndpointActive ? 'active' : 'inactive'}
                   onChange={(e) => setEditingEndpointActive(e.target.value === 'active')}
                 >
