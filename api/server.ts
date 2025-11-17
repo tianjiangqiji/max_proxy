@@ -15,9 +15,9 @@ import { config as loadEnv } from 'dotenv';
 
 const envCandidates = [
   resolve(__dirname, '..', 'backend.env'),
+  resolve(__dirname, '.env'),
   resolve(process.cwd(), 'backend.env'),
-  resolve(process.cwd(), '.env'),
-  resolve(__dirname, '.env')
+  resolve(process.cwd(), '.env')
 ];
 const loadedEnv = new Set<string>();
 for (const envPath of envCandidates) {
@@ -31,6 +31,14 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 const SERVE_DIST_FRONTEND = process.env.SERVE_DIST_FRONTEND !== 'false';
 const RUNTIME_BACKEND_URL = process.env.BACKEND_URL || process.env.VITE_BACKEND_URL || `http://localhost:${PORT}`;
+
+function sendRuntimeEnv(res: express.Response) {
+  const config = {
+    backendUrl: RUNTIME_BACKEND_URL
+  };
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.send(`window.__APP_CONFIG__ = Object.assign({}, window.__APP_CONFIG__ || {}, ${JSON.stringify(config)});`);
+}
 
 // Initialize database
 initializeDatabase();
@@ -56,11 +64,7 @@ app.get('/health', (req, res) => {
 
 // Runtime config for frontend
 app.get('/runtime-env.js', (req, res) => {
-  const config = {
-    backendUrl: RUNTIME_BACKEND_URL
-  };
-  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-  res.send(`window.__APP_CONFIG__ = Object.assign({}, window.__APP_CONFIG__ || {}, ${JSON.stringify(config)});`);
+  sendRuntimeEnv(res);
 });
 
 // API Key validation middleware
@@ -268,6 +272,9 @@ function serveFrontend() {
     // 创建前端应用
     const frontendApp = express();
     frontendApp.use(express.static(distDir));
+    frontendApp.get('/runtime-env.js', (req, res) => {
+      sendRuntimeEnv(res);
+    });
     
     // 所有路由都返回index.html（用于SPA）
     frontendApp.get('*', (req, res) => {
