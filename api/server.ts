@@ -9,11 +9,28 @@ import { getApiKeyByValue, isApiKeyValid } from './database/operations.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import apiRoutes from './routes/api.js';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { existsSync } from 'fs';
+import { config as loadEnv } from 'dotenv';
+
+const envCandidates = [
+  resolve(__dirname, '..', 'backend.env'),
+  resolve(process.cwd(), 'backend.env'),
+  resolve(process.cwd(), '.env'),
+  resolve(__dirname, '.env')
+];
+const loadedEnv = new Set<string>();
+for (const envPath of envCandidates) {
+  if (existsSync(envPath) && !loadedEnv.has(envPath)) {
+    loadEnv({ path: envPath, override: true });
+    loadedEnv.add(envPath);
+  }
+}
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = Number(process.env.PORT) || 3001;
+const SERVE_DIST_FRONTEND = process.env.SERVE_DIST_FRONTEND !== 'false';
+const RUNTIME_BACKEND_URL = process.env.BACKEND_URL || process.env.VITE_BACKEND_URL || `http://localhost:${PORT}`;
 
 // Initialize database
 initializeDatabase();
@@ -35,6 +52,15 @@ app.use('/api/', limiter);
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Runtime config for frontend
+app.get('/runtime-env.js', (req, res) => {
+  const config = {
+    backendUrl: RUNTIME_BACKEND_URL
+  };
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.send(`window.__APP_CONFIG__ = Object.assign({}, window.__APP_CONFIG__ || {}, ${JSON.stringify(config)});`);
 });
 
 // API Key validation middleware
@@ -218,7 +244,7 @@ app.listen(PORT, () => {
   console.log(`🔑 API endpoint: http://localhost:${PORT}/api/v1/*`);
   
   // 在生产模式下自动启动前端静态文件服务器
-  if (process.env.NODE_ENV === 'production') {
+  if (SERVE_DIST_FRONTEND) {
     serveFrontend();
   }
 });
@@ -249,7 +275,7 @@ function serveFrontend() {
     });
     
     // 启动前端服务器，使用不同的端口
-    const frontendPort = process.env.FRONTEND_PORT || 3000;
+    const frontendPort = Number(process.env.FRONTEND_PORT) || 3000;
     frontendApp.listen(frontendPort, () => {
       console.log(`🌐 Frontend server running on port ${frontendPort}`);
       console.log(`🔗 Frontend URL: http://localhost:${frontendPort}`);

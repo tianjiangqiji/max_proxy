@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import { apiFetch } from '@/lib/apiClient';
 
 interface AdminLoginProps {
   onLogin: (token: string, user: { id: number; username: string }) => void;
@@ -20,7 +21,7 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/admin/auth/login', {
+      const response = await apiFetch('/api/admin/auth/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

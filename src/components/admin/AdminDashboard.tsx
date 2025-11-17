@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
+import { apiFetch } from '@/lib/apiClient';
 
 interface ApiEndpoint {
   id: number;
@@ -159,10 +160,10 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
   const fetchData = useCallback(async () => {
     try {
       const [endpointsRes, keysRes, configsRes, statsRes] = await Promise.all([
-        fetch('/api/admin/endpoints', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('/api/admin/keys', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('/api/admin/config', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('/api/admin/stats', { headers: { 'Authorization': `Bearer ${token}` } })
+        apiFetch('/api/admin/endpoints', { headers: { 'Authorization': `Bearer ${token}` } }),
+        apiFetch('/api/admin/keys', { headers: { 'Authorization': `Bearer ${token}` } }),
+        apiFetch('/api/admin/config', { headers: { 'Authorization': `Bearer ${token}` } }),
+        apiFetch('/api/admin/stats', { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
 
       if (!endpointsRes.ok || !keysRes.ok || !configsRes.ok || !statsRes.ok) {
@@ -223,7 +224,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
 
   const fetchRequestLogs = useCallback(async () => {
     try {
-      const response = await fetch('/api/admin/logs/request', {
+      const response = await apiFetch('/api/admin/logs/request', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!response.ok) throw new Error('获取日志失败');
@@ -275,7 +276,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
   // Create endpoint
   const createEndpoint = async (endpointData: Omit<ApiEndpoint, 'id' | 'created_at' | 'updated_at'>) => {
     try {
-      const response = await fetch('/api/admin/endpoints', {
+      const response = await apiFetch('/api/admin/endpoints', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -301,7 +302,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
 
   const updateEndpoint = async (id: number, endpointData: Omit<ApiEndpoint, 'id' | 'created_at' | 'updated_at'>) => {
     try {
-      const response = await fetch(`/api/admin/endpoints/${id}`, {
+      const response = await apiFetch(`/api/admin/endpoints/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -333,7 +334,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
 
   const deleteEndpoint = async (id: number) => {
     try {
-      const response = await fetch(`/api/admin/endpoints/${id}`, {
+      const response = await apiFetch(`/api/admin/endpoints/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -358,7 +359,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
   // Create API key
   const createApiKey = async (keyData: Omit<ApiKey, 'id' | 'created_at' | 'updated_at'>) => {
     try {
-      const response = await fetch('/api/admin/keys', {
+      const response = await apiFetch('/api/admin/keys', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -384,7 +385,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
 
   const deleteApiKey = async (id: number) => {
     try {
-      const response = await fetch(`/api/admin/keys/${id}`, {
+      const response = await apiFetch(`/api/admin/keys/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -409,7 +410,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
   // Update config
   const updateConfig = async (key: string, value: string) => {
     try {
-      const response = await fetch(`/api/admin/config/${key}`, {
+      const response = await apiFetch(`/api/admin/config/${key}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -446,7 +447,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
 
     setIsFetchingModelIds(true);
     try {
-      const response = await fetch(`/api/admin/endpoints/${modelFetchEndpointId}/fetch-models`, {
+      const response = await apiFetch(`/api/admin/endpoints/${modelFetchEndpointId}/fetch-models`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -697,7 +698,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
   const handleDownloadLogs = async () => {
     setIsDownloadingLogs(true);
     try {
-      const response = await fetch('/api/admin/logs/request/download', {
+      const response = await apiFetch('/api/admin/logs/request/download', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!response.ok) throw new Error('下载日志失败');
@@ -724,7 +725,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
   const handleClearLogs = async () => {
     setIsClearingLogs(true);
     try {
-      const response = await fetch('/api/admin/logs/request', {
+      const response = await apiFetch('/api/admin/logs/request', {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });

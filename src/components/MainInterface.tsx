@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { apiFetch } from '@/lib/apiClient';
 
 interface SystemInfo {
   server_url: string;
@@ -38,7 +39,7 @@ export function MainInterface() {
 
   const fetchSystemInfo = async () => {
     try {
-      const response = await fetch('/api/keys/info');
+      const response = await apiFetch('/api/keys/info');
       if (response.ok) {
         const data = await response.json();
         setSystemInfo(data);
@@ -60,7 +61,7 @@ export function MainInterface() {
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/keys/query/${apiKey}`);
+      const response = await apiFetch(`/api/keys/query/${apiKey}`);
       const data = await response.json();
 
       if (response.ok) {

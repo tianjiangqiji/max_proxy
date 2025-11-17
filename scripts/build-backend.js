@@ -1,5 +1,5 @@
 import esbuild from 'esbuild';
-import { copyFileSync, mkdirSync, rmSync } from 'fs';
+import { copyFileSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 
 // 确保输出目录存在
@@ -10,6 +10,21 @@ try {
   // 目录可能不存在，忽略错误
 }
 mkdirSync(outputDir, { recursive: true });
+
+function parseEnvFile(filePath) {
+  if (!existsSync(filePath)) return {};
+  const content = readFileSync(filePath, 'utf8');
+  return content
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line.length > 0 && !line.startsWith('#'))
+    .reduce((acc, line) => {
+      const [key, ...rest] = line.split('=');
+      if (!key) return acc;
+      acc[key.trim()] = rest.join('=').trim();
+      return acc;
+    }, {});
+}
 
 // 使用 esbuild 打包后端代码
 esbuild.build({
@@ -45,6 +60,35 @@ var __dirname = require('path').dirname(__filename);
 }).then(() => {
   console.log('Backend bundled successfully!');
   
+  const backendEnv = parseEnvFile('./backend.env');
+  const frontendEnv = parseEnvFile('./frontend.env');
+  const port = backendEnv.PORT || '3001';
+  const frontendPort = backendEnv.FRONTEND_PORT || '4173';
+  const runtimeEnv = {
+    PORT: port,
+    FRONTEND_PORT: frontendPort,
+    BACKEND_URL: backendEnv.BACKEND_URL || frontendEnv.VITE_BACKEND_URL || `http://localhost:${port}`,
+    FRONTEND_URL: backendEnv.FRONTEND_URL || `http://localhost:${frontendPort}`
+  };
+  const envContent = Object.entries(runtimeEnv)
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n') + '\n';
+  writeFileSync(path.join(outputDir, '.env'), envContent, 'utf8');
+  console.log('Runtime configuration written to dist-server/.env');
+  
+  const runtimePackageJson = {
+    name: backendPackageJson ? `${backendPackageJson.name || 'max_proxy'}-runtime` : 'max_proxy-runtime',
+    version: backendPackageJson?.version || '1.0.0',
+    private: true,
+    type: 'module',
+    scripts: {
+      start: 'node server.cjs'
+    },
+    dependencies: backendPackageJson?.dependencies || {}
+  };
+  writeFileSync(path.join(outputDir, 'package.json'), JSON.stringify(runtimePackageJson, null, 2), 'utf8');
+  console.log('Runtime package.json written to dist-server/package.json');
+  
   // 复制数据库文件
   try {
     mkdirSync('./dist-server/data', { recursive: true });
@@ -56,3 +100,11 @@ var __dirname = require('path').dirname(__filename);
   
   console.log('Backend build completed!');
 }).catch(() => process.exit(1));
+const backendPackageJson = (() => {
+  try {
+    const content = readFileSync('./package.json', 'utf8');
+    return JSON.parse(content);
+  } catch {
+    return null;
+  }
+})();
