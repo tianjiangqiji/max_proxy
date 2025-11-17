@@ -71,7 +71,7 @@ async function validateApiKey(req: express.Request, res: express.Response, next:
 function loadBalancerMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
   try {
     const loadBalancer = getLoadBalancer();
-    const currentEndpoint = loadBalancer.getNextEndpoint();
+    const currentEndpoint = loadBalancer.getNextEndpoint(req.apiKeyGroup);
     
     if (!currentEndpoint) {
       return res.status(503).json({ error: 'No available API endpoints' });
@@ -140,7 +140,8 @@ const proxyMiddleware = createProxyMiddleware({
       // Log the request
       const loadBalancer = getLoadBalancer();
       const responseTime = Date.now() - (req.startTime || Date.now());
-      loadBalancer.logApiRequest(req.apiKey || '', proxyRes.statusCode || 0, responseTime);
+      const platformApi = (req.originalUrl || req.url || '').replace(/^\/api\/v1/, '') || req.path || '';
+      loadBalancer.logApiRequest(req.apiKey || '', proxyRes.statusCode || 0, responseTime, platformApi);
       
       // 如果响应成功，标记端点为成功
       if (proxyRes.statusCode && proxyRes.statusCode < 400) {
@@ -159,7 +160,7 @@ const proxyMiddleware = createProxyMiddleware({
       
       // 尝试获取下一个可用的端点
       try {
-        const nextEndpoint = loadBalancer.getNextEndpoint();
+        const nextEndpoint = loadBalancer.getNextEndpoint(req.apiKeyGroup);
         
         if (nextEndpoint && nextEndpoint.endpoint !== req.targetEndpoint) {
           // 更新请求的目标端点

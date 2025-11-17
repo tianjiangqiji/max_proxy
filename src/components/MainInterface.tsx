@@ -8,8 +8,12 @@ import { useToast } from '@/hooks/use-toast';
 interface SystemInfo {
   server_url: string;
   model_ids: string[];
-  qq_group: string;
+  purchase_url?: string;
+  purchase_button_label?: string;
 }
+
+const DEFAULT_PURCHASE_URL = 'https://qm.qq.com/q/a76O4CjZAI';
+const DEFAULT_PURCHASE_LABEL = '立即获取！';
 
 interface ApiKeyInfo {
   key_value: string;
@@ -80,8 +84,9 @@ export function MainInterface() {
     }
   };
 
-  const openQQGroup = () => {
-    window.open('https://qm.qq.com/q/a76O4CjZAI', '_blank');
+  const openPurchaseLink = () => {
+    const targetUrl = systemInfo?.purchase_url || DEFAULT_PURCHASE_URL;
+    window.open(targetUrl, '_blank');
   };
 
   const copyToClipboard = (text: string, type: string) => {
@@ -209,15 +214,15 @@ export function MainInterface() {
           <Card className="h-full flex flex-col">
             <CardHeader>
               <CardTitle>需要 API Key ？</CardTitle>
-              <CardDescription>加入 QQ 群购买 API Key</CardDescription>
+              <CardDescription>联系我们来购买 API Key</CardDescription>
             </CardHeader>
             <CardContent className="flex-1 flex flex-col justify-end">
               <Button
-                onClick={openQQGroup}
+                onClick={openPurchaseLink}
                 className="w-full bg-green-600 hover:bg-green-700"
                 size="lg"
               >
-                加入 QQ 群：720198992
+                {systemInfo?.purchase_button_label || DEFAULT_PURCHASE_LABEL}
               </Button>
             </CardContent>
           </Card>

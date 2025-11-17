@@ -1,5 +1,22 @@
+import fs from 'fs';
+import path from 'path';
 import { getDatabase } from '../database';
 import type { ApiEndpoint, ApiKey, SystemConfig } from '../database';
+
+const dataRoot = path.resolve(process.cwd(), 'data');
+const requestLogPath = path.join(dataRoot, 'request.log');
+
+type RequestLogEntry = {
+  timestamp: string;
+  client_api_key: string;
+  endpoint_url: string;
+  endpoint_api_key: string;
+  endpoint_group: string;
+  platform_api: string;
+  status_code: number;
+  response_time: number;
+};
+export type { RequestLogEntry };
 
 
 
@@ -228,13 +245,65 @@ export function updateSystemConfig(key: string, value: string): void {
 }
 
 // Request logging
-export function logRequest(apiKey: string, endpointUrl: string, statusCode: number, responseTime: number): void {
+export function logRequest(
+  apiKey: string,
+  endpointUrl: string,
+  endpointApiKey: string,
+  endpointGroup: string,
+  platformApi: string,
+  statusCode: number,
+  responseTime: number
+): void {
   const db = getDatabase();
   const stmt = db.prepare(`
     INSERT INTO request_logs (api_key, endpoint_url, status_code, response_time)
     VALUES (?, ?, ?, ?)
   `);
   stmt.run(apiKey, endpointUrl, statusCode, responseTime);
+
+  const timestamp = new Date().toISOString();
+  const entry: RequestLogEntry = {
+    timestamp,
+    client_api_key: apiKey,
+    endpoint_url: endpointUrl,
+    endpoint_api_key: endpointApiKey,
+    endpoint_group: endpointGroup,
+    platform_api: platformApi,
+    status_code: statusCode,
+    response_time: responseTime
+  };
+  fs.appendFileSync(requestLogPath, JSON.stringify(entry) + '\n', { encoding: 'utf8' });
+}
+
+export function readRequestLog(maxLines = 200): RequestLogEntry[] {
+  if (!fs.existsSync(requestLogPath)) return [];
+  const content = fs.readFileSync(requestLogPath, 'utf8');
+  const lines = content.split(/\r?\n/).filter(line => line.trim().length > 0);
+  const entries: RequestLogEntry[] = [];
+  for (const line of lines.slice(-maxLines)) {
+    try {
+      const parsed = JSON.parse(line) as RequestLogEntry;
+      entries.push(parsed);
+    } catch {
+      continue;
+    }
+  }
+  return entries;
+}
+
+export function readRequestLogRaw(): Buffer | null {
+  if (!fs.existsSync(requestLogPath)) return null;
+  return fs.readFileSync(requestLogPath);
+}
+
+export function clearRequestLog(): void {
+  if (fs.existsSync(requestLogPath)) {
+    fs.writeFileSync(requestLogPath, '', 'utf8');
+  }
+}
+
+export function getRequestLogFilePath(): string {
+  return requestLogPath;
 }
 
 // Statistics

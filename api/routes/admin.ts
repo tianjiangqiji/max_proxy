@@ -16,12 +16,16 @@ import {
   getAllSystemConfigs,
   updateSystemConfig,
   generateApiKey,
-  getRequestStats
+  getRequestStats,
+  readRequestLog,
+  readRequestLogRaw,
+  clearRequestLog
 } from '../database/operations.js';
 import { refreshLoadBalancer } from '../loadBalancer.js';
 import { getDatabase } from '../database.js';
 
 const router = express.Router();
+const DEPRECATED_CONFIG_KEYS = new Set(['support_qq_group']);
 
 // All admin routes require authentication
 router.use(authenticateToken);
@@ -172,7 +176,7 @@ router.delete('/keys/:id', (req, res) => {
 // System configuration
 router.get('/config', (req, res) => {
   try {
-    const configs = getAllSystemConfigs();
+    const configs = getAllSystemConfigs().filter(config => !DEPRECATED_CONFIG_KEYS.has(config.key));
     res.json(configs);
   } catch (error) {
     console.error('Get config error:', error);
@@ -184,6 +188,11 @@ router.put('/config/:key', (req, res) => {
   try {
     const { key } = req.params;
     const { value } = req.body;
+    
+    if (DEPRECATED_CONFIG_KEYS.has(key)) {
+      console.warn(`Attempt to update deprecated config key: ${key}`);
+      return res.status(400).json({ error: 'Configuration key is deprecated' });
+    }
     
     if (!value) {
       return res.status(400).json({ error: 'Value is required' });
@@ -283,6 +292,43 @@ router.post('/change-password', async (req, res) => {
   } catch (error) {
     console.error('Change password error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Request log APIs
+router.get('/logs/request', (req, res) => {
+  try {
+    const entries = readRequestLog(200);
+    res.json({ entries });
+  } catch (error) {
+    console.error('Read log error:', error);
+    res.status(500).json({ error: '读取日志失败' });
+  }
+});
+
+router.get('/logs/request/download', (req, res) => {
+  try {
+    const buffer = readRequestLogRaw();
+    if (!buffer) {
+      return res.status(404).json({ error: '日志为空' });
+    }
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="request.log"');
+    res.setHeader('Content-Length', buffer.length);
+    res.send(buffer);
+  } catch (error) {
+    console.error('Download log error:', error);
+    res.status(500).json({ error: '下载日志失败' });
+  }
+});
+
+router.delete('/logs/request', (req, res) => {
+  try {
+    clearRequestLog();
+    res.json({ message: '日志已清空' });
+  } catch (error) {
+    console.error('Clear log error:', error);
+    res.status(500).json({ error: '清空日志失败' });
   }
 });
 

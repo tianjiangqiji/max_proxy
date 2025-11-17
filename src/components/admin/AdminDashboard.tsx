@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -43,10 +43,24 @@ interface DashboardStats {
   activeKeys: number;
 }
 
+interface RequestLogEntry {
+  timestamp: string;
+  client_api_key: string;
+  endpoint_url: string;
+  endpoint_api_key: string;
+  endpoint_group: string;
+  platform_api: string;
+  status_code: number;
+  response_time: number;
+}
+
 interface AdminDashboardProps {
   token: string;
   onLogout: () => void;
 }
+
+const SUGGESTION_DISPLAY_LIMIT = 6;
+const LOG_REFRESH_INTERVAL = 5000;
 
 export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
   const [endpoints, setEndpoints] = useState<ApiEndpoint[]>([]);
@@ -78,6 +92,10 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
   const [isEndpointDeleteDialogOpen, setIsEndpointDeleteDialogOpen] = useState(false);
   const [endpointToDelete, setEndpointToDelete] = useState<ApiEndpoint | null>(null);
   const [isDeletingEndpoint, setIsDeletingEndpoint] = useState(false);
+  const [requestLogs, setRequestLogs] = useState<RequestLogEntry[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [isClearingLogs, setIsClearingLogs] = useState(false);
+  const [isDownloadingLogs, setIsDownloadingLogs] = useState(false);
   
   // API Key dialog states
   const [isKeyDialogOpen, setIsKeyDialogOpen] = useState(false);
@@ -98,10 +116,10 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
     load_balance_strategy: {
       label: '负载均衡策略',
       placeholder: 'round_robin | weight_based | time_based',
-      description: '从 round_robin、weight_based、time_based 中选择'
+      description: '从 round_robin、weight_based、time_based 中选择（分别为轮询、权重、时间）'
     },
     switch_frequency: {
-      label: '切换频率（请求数）',
+      label: '切换频率（轮询）',
       placeholder: '数字，例如 10',
       description: '累计请求数达到该值时切换到下一个端点'
     },
@@ -124,11 +142,21 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
       label: '可用模型列表',
       placeholder: '逗号分隔的模型 ID',
       description: '用于前端展示的模型 ID 列表（逗号分隔）'
+    },
+    api_key_purchase_url: {
+      label: 'API Key 获取链接',
+      placeholder: 'https://example.com',
+      description: '点击按钮后跳转的链接地址'
+    },
+    purchase_button_label: {
+      label: '按钮显示文字',
+      placeholder: '例如：立即获取！',
+      description: '展示在按钮上的文案，将与跳转链接一起作用'
     }
   };
 
   // Fetch data
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [endpointsRes, keysRes, configsRes, statsRes] = await Promise.all([
         fetch('/api/admin/endpoints', { headers: { 'Authorization': `Bearer ${token}` } }),
@@ -162,17 +190,87 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, toast]);
 
   useEffect(() => {
     fetchData();
-  }, [token]);
+  }, [fetchData]);
+
+  const uniqueGroups = useMemo(
+    () => Array.from(new Set(endpoints.map(endpoint => endpoint.group_name))).filter(Boolean),
+    [endpoints]
+  );
+  const uniqueUrls = useMemo(
+    () => Array.from(new Set(endpoints.map(endpoint => endpoint.url))).filter(Boolean),
+    [endpoints]
+  );
+  const endpointUrlListId = 'endpoint-url-options';
+  const endpointGroupListId = 'endpoint-group-options';
+  const urlSuggestions = uniqueUrls.slice(0, SUGGESTION_DISPLAY_LIMIT);
+  const groupSuggestions = uniqueGroups.slice(0, SUGGESTION_DISPLAY_LIMIT);
 
   useEffect(() => {
     if (!modelFetchEndpointId && endpoints.length > 0) {
       setModelFetchEndpointId(String(endpoints[0].id));
     }
   }, [endpoints, modelFetchEndpointId]);
+
+  useEffect(() => {
+    if (!keyGroupName && uniqueGroups.length > 0) {
+      setKeyGroupName(uniqueGroups[0]);
+    }
+  }, [uniqueGroups, keyGroupName]);
+
+  const fetchRequestLogs = useCallback(async () => {
+    try {
+      const response = await fetch('/api/admin/logs/request', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error('获取日志失败');
+      const data = await response.json() as { entries: RequestLogEntry[] };
+      setRequestLogs(data.entries ?? []);
+    } catch (error) {
+      console.error(error);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    const loadLogs = async () => {
+      setIsLoadingLogs(true);
+      await fetchRequestLogs();
+      setIsLoadingLogs(false);
+    };
+
+    loadLogs();
+    const interval = window.setInterval(loadLogs, LOG_REFRESH_INTERVAL);
+    return () => clearInterval(interval);
+  }, [fetchRequestLogs]);
+
+  const renderSuggestionButtons = (
+    items: string[],
+    onSelect: (value: string) => void,
+    keyPrefix: string
+  ) => {
+    if (items.length === 0) return null;
+    return (
+      <div className="space-y-1">
+        <p className="text-xs text-gray-500 dark:text-gray-400">已有记录（点击自动填充）</p>
+        <div className="flex flex-wrap gap-2">
+          {items.map((item) => (
+            <button
+              key={`${keyPrefix}-${item}`}
+              type="button"
+              className="max-w-[240px] truncate rounded-md border border-dashed px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+              onClick={() => onSelect(item)}
+              title={item}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   // Create endpoint
   const createEndpoint = async (endpointData: Omit<ApiEndpoint, 'id' | 'created_at' | 'updated_at'>) => {
@@ -214,8 +312,13 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
 
       if (!response.ok) throw new Error('更新端点失败');
 
-      const updatedEndpoint = await response.json();
-      setEndpoints((prev) => prev.map((endpoint) => (endpoint.id === id ? updatedEndpoint : endpoint)));
+      setEndpoints((prev) =>
+        prev.map((endpoint) =>
+          endpoint.id === id
+            ? { ...endpoint, ...endpointData, updated_at: new Date().toISOString() }
+            : endpoint
+        )
+      );
       toast({ title: '成功', description: '端点更新成功' });
     } catch (error) {
       console.error(error);
@@ -559,7 +662,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
     if (!keyGroupName) {
       toast({
         title: '错误',
-        description: '请填写分组名称',
+        description: '请选择分组名称',
         variant: 'destructive',
       });
       return;
@@ -585,6 +688,60 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
     }
   };
 
+  const handleRefreshLogs = async () => {
+    setIsLoadingLogs(true);
+    await fetchRequestLogs();
+    setIsLoadingLogs(false);
+  };
+
+  const handleDownloadLogs = async () => {
+    setIsDownloadingLogs(true);
+    try {
+      const response = await fetch('/api/admin/logs/request/download', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error('下载日志失败');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'request.log';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      toast({
+        title: '错误',
+        description: error instanceof Error ? error.message : '下载日志失败',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDownloadingLogs(false);
+    }
+  };
+
+  const handleClearLogs = async () => {
+    setIsClearingLogs(true);
+    try {
+      const response = await fetch('/api/admin/logs/request', {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error('清空日志失败');
+      toast({ title: '成功', description: '日志已清空' });
+      setRequestLogs([]);
+    } catch (error) {
+      toast({
+        title: '错误',
+        description: error instanceof Error ? error.message : '清空日志失败',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsClearingLogs(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -596,6 +753,16 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Toaster />
+      <datalist id={endpointUrlListId}>
+        {uniqueUrls.map((url) => (
+          <option key={`url-${url}`} value={url} />
+        ))}
+      </datalist>
+      <datalist id={endpointGroupListId}>
+        {uniqueGroups.map((group) => (
+          <option key={`group-${group}`} value={group} />
+        ))}
+      </datalist>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold">管理后台</h1>
@@ -651,6 +818,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
             <TabsTrigger value="endpoints">API 端点</TabsTrigger>
             <TabsTrigger value="keys">API 密钥</TabsTrigger>
             <TabsTrigger value="config">系统配置</TabsTrigger>
+            <TabsTrigger value="logs">请求日志</TabsTrigger>
           </TabsList>
 
           <TabsContent value="endpoints" className="space-y-4">
@@ -755,7 +923,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
 
           <TabsContent value="config" className="space-y-4">
             <h2 className="text-xl font-semibold">系统配置</h2>
-            <div className="grid gap-4">
+            <div className="space-y-4">
               {configs.map((config) => (
                 <Card key={config.id}>
                   <CardContent className="pt-6">
@@ -819,6 +987,53 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
               ))}
             </div>
           </TabsContent>
+
+          <TabsContent value="logs" className="space-y-4">
+            <h2 className="text-xl font-semibold">请求日志</h2>
+            <Card>
+              <CardHeader>
+                <CardTitle>实时请求日志</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-2 space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" onClick={handleRefreshLogs} disabled={isLoadingLogs}>
+                    {isLoadingLogs ? '刷新中...' : '刷新'}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleDownloadLogs} disabled={isDownloadingLogs}>
+                    {isDownloadingLogs ? '下载中...' : '下载全部'}
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={handleClearLogs} disabled={isClearingLogs}>
+                    {isClearingLogs ? '清空中...' : '清空日志'}
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  默认显示最新 200 行，包含平台 API、端点 URL/KEY、分组及耗时。
+                </p>
+                <div className="max-h-[28rem] overflow-auto rounded-md border border-gray-200 bg-black text-green-400 text-xs font-mono p-3 dark:border-gray-700">
+                  {requestLogs.length === 0 ? (
+                    <p className="text-gray-400">暂无日志记录</p>
+                  ) : (
+                    requestLogs.map((entry, index) => (
+                      <div key={`${entry.timestamp}-${index}`} className="py-2 border-b border-gray-700/50 last:border-b-0">
+                        <div className="flex flex-wrap gap-4 text-xs text-gray-300">
+                          <span>{entry.timestamp}</span>
+                          <span>状态：{entry.status_code}</span>
+                          <span>耗时：{entry.response_time}ms</span>
+                        </div>
+                        <div className="mt-1 space-y-1 text-xs break-all">
+                          <div>平台 API：{entry.platform_api || '未知'}</div>
+                          <div>客户端 KEY：{entry.client_api_key}</div>
+                          <div>端点 URL：{entry.endpoint_url}</div>
+                          <div>端点 KEY：{entry.endpoint_api_key}</div>
+                          <div>分组：{entry.endpoint_group || '未分组'}</div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
         
         {/* Create API Key Dialog */}
@@ -831,15 +1046,21 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="key-group">分组名称</Label>
-                  <Input
-                    id="key-group"
-                    value={keyGroupName}
-                    onChange={(e) => setKeyGroupName(e.target.value)}
-                    placeholder="输入分组名称"
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="key-group">分组名称</Label>
+                <select
+                  id="key-group"
+                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"
+                  value={keyGroupName}
+                  onChange={(e) => setKeyGroupName(e.target.value)}
+                  disabled={uniqueGroups.length === 0}
+                >
+                  {uniqueGroups.length === 0 && <option value="">暂无可用分组</option>}
+                  {uniqueGroups.map((group) => (
+                    <option key={group} value={group}>{group}</option>
+                  ))}
+                </select>
+              </div>
                 <div className="space-y-2">
                   <Label htmlFor="key-expires">过期时间（天，-1为永不过期）</Label>
                   <Input
@@ -861,9 +1082,9 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
                 </Button>
                 <Button
                   onClick={handleCreateKey}
-                  disabled={isCreatingKey}
+                  disabled={isCreatingKey || uniqueGroups.length === 0}
                 >
-                  {isCreatingKey ? '生成中...' : '确认生成'}
+                  {isCreatingKey ? '生成中...' : (uniqueGroups.length === 0 ? '无可用分组' : '确认生成')}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -886,7 +1107,9 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
                   value={endpointUrl}
                   onChange={(e) => setEndpointUrl(e.target.value)}
                   placeholder="https://api.example.com"
+                  list={endpointUrlListId}
                 />
+                {renderSuggestionButtons(urlSuggestions, setEndpointUrl, 'create-url')}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="endpoint-api-key">API Key</Label>
@@ -904,7 +1127,9 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
                   value={endpointGroupName}
                   onChange={(e) => setEndpointGroupName(e.target.value)}
                   placeholder="输入分组名称"
+                  list={endpointGroupListId}
                 />
+                {renderSuggestionButtons(groupSuggestions, setEndpointGroupName, 'create-group')}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="endpoint-weight">权重</Label>
@@ -958,7 +1183,9 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
                   value={editingEndpointUrl}
                   onChange={(e) => setEditingEndpointUrl(e.target.value)}
                   placeholder="https://api.example.com"
+                  list={endpointUrlListId}
                 />
+                {renderSuggestionButtons(urlSuggestions, setEditingEndpointUrl, 'edit-url')}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-endpoint-api-key">API Key</Label>
@@ -976,7 +1203,9 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
                   value={editingEndpointGroupName}
                   onChange={(e) => setEditingEndpointGroupName(e.target.value)}
                   placeholder="输入分组名称"
+                  list={endpointGroupListId}
                 />
+                {renderSuggestionButtons(groupSuggestions, setEditingEndpointGroupName, 'edit-group')}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-endpoint-weight">权重</Label>

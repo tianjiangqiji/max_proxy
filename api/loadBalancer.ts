@@ -23,6 +23,7 @@ class LoadBalancer {
   private config: LoadBalancerConfig;
   private lastUpdateTime = 0;
   private failedEndpoints: Set<string> = new Set(); // 记录失败的端点URL
+  private currentGroup: string | null = null; // 当前请求对应的分组
   private maxFailures = 3; // 最大失败次数
   private failureCooldown = 5 * 60 * 1000; // 失败冷却时间（5分钟）
 
@@ -41,17 +42,19 @@ class LoadBalancer {
     };
   }
 
-  private updateEndpoints(): void {
-    // 获取所有活跃端点
+  private updateEndpoints(group?: string | null): void {
+    // 获取所有活跃端点并按分组过滤
     const allEndpoints = getActiveApiEndpoints();
+    const filteredByGroup = group ? allEndpoints.filter(endpoint => endpoint.group_name === group) : allEndpoints;
     
     // 过滤掉当前被标记为失败的端点
-    this.endpoints = allEndpoints.filter(endpoint => !this.failedEndpoints.has(endpoint.url));
+    this.endpoints = filteredByGroup.filter(endpoint => !this.failedEndpoints.has(endpoint.url));
+    this.currentIndex = 0; // 每次刷新列表重置轮询索引
     
-    // 如果过滤后没有可用端点，重置失败列表并使用所有端点
-    if (this.endpoints.length === 0 && allEndpoints.length > 0) {
+    // 如果过滤后没有可用端点，重置失败列表并使用分组内所有端点
+    if (this.endpoints.length === 0 && filteredByGroup.length > 0) {
       this.failedEndpoints.clear();
-      this.endpoints = allEndpoints;
+      this.endpoints = filteredByGroup;
     }
     
     this.lastUpdateTime = Date.now();
@@ -118,10 +121,17 @@ class LoadBalancer {
     return this.endpoints[timeSlot] || this.endpoints[0];
   }
 
-  public getNextEndpoint(): CurrentEndpoint {
+  public getNextEndpoint(group?: string): CurrentEndpoint {
+    // 当分组变化时，重置当前端点并刷新列表
+    if (this.currentGroup !== (group || null)) {
+      this.currentGroup = group || null;
+      this.currentEndpoint = null;
+      this.updateEndpoints(this.currentGroup);
+    }
+
     // Update endpoints if cache is stale (older than 5 minutes)
     if (Date.now() - this.lastUpdateTime > 5 * 60 * 1000) {
-      this.updateEndpoints();
+      this.updateEndpoints(this.currentGroup);
     }
 
     // 如果没有可用的端点，抛出错误
@@ -156,7 +166,7 @@ class LoadBalancer {
     return this.currentEndpoint;
   }
 
-  // 新增：标记端点失败
+    // 新增：标记端点失败
   public markEndpointFailure(endpointUrl: string): void {
     // 增加当前端点的失败计数
     if (this.currentEndpoint && this.currentEndpoint.endpoint.url === endpointUrl) {
@@ -169,11 +179,11 @@ class LoadBalancer {
         // 设置一个定时器，在冷却时间后重置失败状态
         setTimeout(() => {
           this.failedEndpoints.delete(endpointUrl);
-          this.updateEndpoints();
+          this.updateEndpoints(this.currentGroup);
         }, this.failureCooldown);
         
         // 强制更新端点列表，排除失败的端点
-        this.updateEndpoints();
+        this.updateEndpoints(this.currentGroup);
         
         // 重置当前端点，强制选择新端点
         this.currentEndpoint = null;
@@ -191,7 +201,7 @@ class LoadBalancer {
     // 如果端点之前被标记为失败，现在恢复它
     if (this.failedEndpoints.has(endpointUrl)) {
       this.failedEndpoints.delete(endpointUrl);
-      this.updateEndpoints();
+      this.updateEndpoints(this.currentGroup);
     }
   }
 
@@ -205,12 +215,21 @@ class LoadBalancer {
 
   public refreshConfig(): void {
     this.config = this.loadConfig();
-    this.updateEndpoints();
+    this.updateEndpoints(this.currentGroup);
   }
 
-  public logApiRequest(apiKey: string, statusCode: number, responseTime: number): void {
+  public logApiRequest(apiKey: string, statusCode: number, responseTime: number, platformApi: string): void {
     if (this.currentEndpoint) {
-      logRequest(apiKey, this.currentEndpoint.endpoint.url, statusCode, responseTime);
+      const { endpoint } = this.currentEndpoint;
+      logRequest(
+        apiKey,
+        endpoint.url,
+        endpoint.api_key,
+        endpoint.group_name,
+        platformApi,
+        statusCode,
+        responseTime
+      );
     }
   }
 }

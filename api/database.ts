@@ -156,7 +156,9 @@ function insertDefaultConfig(): void {
     { key: 'switch_time_interval', value: '60', description: 'Time interval in seconds for switching endpoints' },
     { key: 'enable_url_switch', value: 'true', description: 'Enable URL switching in load balancing' },
     { key: 'enable_key_switch', value: 'true', description: 'Enable API key switching in load balancing' },
-    { key: 'model_ids', value: 'gpt-3.5-turbo,gpt-4,gpt-4-turbo', description: 'Available model IDs, comma-separated' }
+    { key: 'model_ids', value: 'gpt-3.5-turbo,gpt-4,gpt-4-turbo', description: 'Available model IDs, comma-separated' },
+    { key: 'api_key_purchase_url', value: 'https://qm.qq.com/q/a76O4CjZAI', description: 'Link opened when users request API keys' },
+    { key: 'purchase_button_label', value: '立即获取！', description: 'Text shown on the purchase button' }
   ];
 
   const stmt = db.prepare(`

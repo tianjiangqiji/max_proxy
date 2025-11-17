@@ -2,6 +2,8 @@ import express from 'express';
 import { getApiKeyByValue, isApiKeyValid, getSystemConfig } from '../database/operations';
 
 const router = express.Router();
+const DEFAULT_PURCHASE_URL = 'https://qm.qq.com/q/a76O4CjZAI';
+const DEFAULT_PURCHASE_LABEL = '立即获取！';
 
 // Query API key information
 router.get('/query/:key', (req, res) => {
@@ -40,11 +42,14 @@ router.get('/info', (req, res) => {
   try {
     const modelIds = getSystemConfig('model_ids') || 'gpt-3.5-turbo,gpt-4,gpt-4-turbo';
     const serverUrl = `${req.protocol}://${req.get('host')}/api/v1`;
+    const purchaseUrl = getSystemConfig('api_key_purchase_url') || DEFAULT_PURCHASE_URL;
+    const purchaseLabel = getSystemConfig('purchase_button_label') || DEFAULT_PURCHASE_LABEL;
     
     res.json({
       server_url: serverUrl,
       model_ids: modelIds.split(',').map(id => id.trim()),
-      qq_group: '720198992'
+      purchase_url: purchaseUrl,
+      purchase_button_label: purchaseLabel
     });
   } catch (error) {
     console.error('Get info error:', error);
