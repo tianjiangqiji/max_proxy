@@ -37,6 +37,9 @@ function sendRuntimeEnv(res: express.Response) {
     backendUrl: RUNTIME_BACKEND_URL
   };
   res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.send(`window.__APP_CONFIG__ = Object.assign({}, window.__APP_CONFIG__ || {}, ${JSON.stringify(config)});`);
 }
 
