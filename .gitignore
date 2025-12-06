@@ -11,8 +11,7 @@ proxy.db
 data
 
 node_modules
-dist
-dist-server
+
 *.local
 
 # Editor directories and files

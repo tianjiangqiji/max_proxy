@@ -1,7 +1,13 @@
+## 演示图片
+
+![](more\PixPin_2025-12-06_14-26-46.png)
+![](more\PixPin_2025-12-06_14-26-55.png)
+
+
 ## 部署说明
 
 执行 `npm run build` 后，会生成 `dist/`（前端静态资源）与 `dist-server/`（Node 后端）。将 `dist-server/` 上传到目标服务器后即可通过 `node dist-server/server.cjs` 启动服务。
-
+(more 文件夹有编译好的，可以直接使用，可查看[快速部署.md](快速部署.md)文档)
 ### dist-server/.env
 
 构建脚本会把 `backend.env` 与 `frontend.env` 的默认值写入 `dist-server/.env`。生产环境建议只修改该文件：
