@@ -6,16 +6,40 @@ import { AdminLogin } from '@/components/admin/AdminLogin';
 import { AdminDashboard } from '@/components/admin/AdminDashboard';
 import { Footer } from '@/components/Footer';
 import { Button } from '@/components/ui/button';
+import { apiFetch } from '@/lib/apiClient';
 
 function App() {
   const [adminToken, setAdminToken] = useState<string | null>(null);
 
-  // Check for existing token on app load
+  // Check for existing token on app load and validate with backend
   useEffect(() => {
-    const token = localStorage.getItem('adminToken');
-    if (token) {
-      setAdminToken(token);
-    }
+    const validateExistingSession = async () => {
+      const token = localStorage.getItem('adminToken');
+      if (!token) return;
+
+      try {
+        const response = await apiFetch('/api/admin/auth/me', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!response.ok) {
+          throw new Error('Session validation failed');
+        }
+
+        const data = await response.json().catch(() => ({}));
+        if (data?.user) {
+          localStorage.setItem('adminUser', JSON.stringify(data.user));
+        }
+        setAdminToken(token);
+      } catch (error) {
+        console.warn('Failed to validate stored admin session', error);
+        localStorage.removeItem('adminToken');
+        localStorage.removeItem('adminUser');
+        setAdminToken(null);
+      }
+    };
+
+    validateExistingSession();
   }, []);
 
   const handleLogin = (token: string, user: { id: number; username: string }) => {

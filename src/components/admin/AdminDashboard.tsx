@@ -73,6 +73,7 @@ const SUGGESTION_DISPLAY_LIMIT = 6;
 const LOG_REFRESH_INTERVAL = 5000;
 
 export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
+  const [activeTab, setActiveTab] = useState('endpoints');
   const [endpoints, setEndpoints] = useState<ApiEndpoint[]>([]);
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [configs, setConfigs] = useState<SystemConfig[]>([]);
@@ -259,7 +260,13 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
     }
   }, [token]);
 
+  const shouldRefreshLogs = activeTab === 'logs';
+
   useEffect(() => {
+    if (!shouldRefreshLogs) {
+      return;
+    }
+
     const loadLogs = async () => {
       setIsLoadingLogs(true);
       await fetchRequestLogs();
@@ -269,7 +276,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
     loadLogs();
     const interval = window.setInterval(loadLogs, LOG_REFRESH_INTERVAL);
     return () => clearInterval(interval);
-  }, [fetchRequestLogs]);
+  }, [fetchRequestLogs, shouldRefreshLogs]);
 
   const renderSuggestionButtons = (
     items: string[],
@@ -632,7 +639,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
 
     setIsChangingPassword(true);
     try {
-      const response = await fetch('/api/admin/change-password', {
+      const response = await apiFetch('/api/admin/change-password', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -881,7 +888,7 @@ export function AdminDashboard({ token, onLogout }: AdminDashboardProps) {
           </div>
         )}
 
-        <Tabs defaultValue="endpoints" className="space-y-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList>
             <TabsTrigger value="endpoints">API 端点</TabsTrigger>
             <TabsTrigger value="keys">API 密钥</TabsTrigger>
